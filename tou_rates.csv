@@ -1,0 +1,4 @@
+rate,value ($/kwh),M-F,Sa-Su
+peak,0.216710,1pm-6pm,
+part-peak,0.113840,"10am-12pm, 7pm-8pm",5pm-8pm
+off-peak,0.071850,9pm-10am,8pm-5pm
