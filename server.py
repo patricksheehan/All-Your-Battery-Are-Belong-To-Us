@@ -16,7 +16,7 @@ def charge_or_discharge(time_of_day, predicted_consumption=0, battery_level=0, p
            battery_level > 80 and get_time_at_hour(19) <= datetime.fromtimestamp(time_of_day) <= get_time_at_hour(23))
 
 
-@app.route('/info/<int:level_battery>/<int:curr_consumption>/<int:time>', methods=['GET'])
+@app.route('/info/<float:level_battery>/<int:curr_consumption>/<int:time>', methods=['GET'])
 def info(level_battery, curr_consumption, time):
     return jsonify({'charge': charge_or_discharge(time, curr_consumption, level_battery)})
 

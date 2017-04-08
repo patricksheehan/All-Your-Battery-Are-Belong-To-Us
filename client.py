@@ -1,6 +1,6 @@
-import math
+import csv
 import requests
-from datetime import time as timestamp_g, datetime
+from datetime import datetime
 import time
 
 charging = True
@@ -10,27 +10,36 @@ def ask_for_what_to_do(current_battery_level, curr_consumption, timestamp):
     url = 'http://127.0.0.1:5000/info/' + str(current_battery_level) + '/' + str(curr_consumption) \
           + '/' + str(int(time.mktime(timestamp.timetuple())))
     response = requests.get(url)
-    print "battery level: " + str(current_battery_level) + \
-          "%, power consumption " + str(curr_consumption) + \
-          "Watt/h, hour: " + str(timestamp.hour) + " [ request to cloud ] Asking to the cloud what is the next action, url: " + url
+
+    print("battery level: {}\n% power consumption: {}\nWatt/h, hour: {}".format(current_battery_level, str(curr_consumption),
+                                                                                timestamp.hour))
     body = response.json()
     if body['charge']:
         charging = True
-        print "Charging my battery"
+        print("Charging my battery\n")
     else:
         charging = False
-        print "Releasing enery from the battery"
+        print("Releasing energy from the battery\n")
+
 
 def loop_forever():
-    current_time = 14
-    percentage = 90
-    while 1:
+
+    with open('usage_full_year_residential.csv', 'r') as f:
+        next(f)
+        measures = [measure for measure in csv.reader(f)]
+
+    current_time = 12
+    percentage = 90.
+
+    for index, usage in measures:
+        usage = float(usage)
+
         if charging:
-            percentage += 4
+            percentage += 0.5
         else:
-            percentage -= 5
-        if percentage>100:
-            percentage=100
+            percentage -= usage
+        if percentage > 100:
+            percentage = 100.
 
         current_time += 1
         current_time = current_time % 24
