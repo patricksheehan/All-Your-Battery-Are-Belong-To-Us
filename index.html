@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+  body {
+    margin: 0; 
+    overflow:hidden;
+  }
+  #dateline {
+    stroke: black;
+    visibility: hidden;
+  }
+  #mouse-sensor {
+    fill-opacity: 0;
+    stroke: black;
+    stroke-width: .25;
+  }
+
+  #tooltip {
+    background-color: black;
+    border: 1px white solid;
+    border-radius: 5px;
+    color: white;
+    margin: auto;
+    opacity: .8;
+    padding: 10px;
+    position: fixed;
+    visibility: hidden;
+    z-index: 10;
+  }
+</style>
+<body>
+</body>
+<script src="d3.v4.min.js"></script>
+<script>
+
+var width = innerWidth - 50,
+    height = 500,
+    margin = 25;
+
+var rangeX = d3.scaleTime().range([0, width - 1]),
+    rangeY = d3.scaleLinear().range([300, 0]);
+
+var mainX = d3.scaleTime().range([0, width - 1]);
+var scalesY = {
+  combined: d3.scaleLinear().range([200, 0]),
+  rate: d3.scaleLinear().range([95, 5])
+}
+
+var colors = {
+  usage: 'steelblue', 
+  solar: 'green', 
+  rate: 'red',
+  battery: 'orange'
+}
+
+var tooltip = d3.select("body").append("div")
+    .attr("id", "tooltip")
+    .html("")
+    .on("mouseover", mouseMoved);
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width + margin*2)
+    .attr("height", height + margin)
+  .append("g")
+    .attr("transform", "translate(" + margin + ", " + margin + ")")
+
+var mainChart = svg.append("g")
+    .attr("class", "chart");
+
+mainChart.append("g")
+    .attr("class", "paths");
+
+svg.append("defs").append("clipPath")
+    .attr("id", "clip")
+  .append("rect")
+    .attr("width", width)
+    .attr("height", 300);
+
+mainChart.append("rect")
+    .attr("id", "mouse-sensor")
+    .attr("width", width)
+    .attr("height", 300)
+    .on("mousemove", mouseMoved)
+    .on("mouseout", mouseOut);
+
+var rangeChart = svg.append("g")
+    .attr("class", "chart")
+    .attr("width", width)
+    .attr("height", 100)
+    .attr("transform", "translate(0,350)");
+
+rangeChart.append("g")
+    .attr("class", "paths")
+
+var brush = d3.brushX()
+    .extent([[0, 0], [width, 50]])
+    .on("brush", brushed)
+    .on("end", brushEnded)
+
+rangeChart.append("g")
+    .attr("class", "brush")
+    .call(brush);
+
+var xAxisRange = rangeChart.append("g")
+    .attr("transform", "translate(0, 50)")
+
+svg.append("line")
+    .attr("id", "dateline")
+    .attr("class", "info")
+    .style("stroke-dasharray", [3, 3])
+    .attr("y1", 0)
+    .attr("y2", 300);
+
+var total = svg.append("text")
+    .attr("x", 10)
+    .attr("y", 325)
+
+var data;
+
+d3.csv(`optimization_result.csv`, function(sourceData) {
+  data = sourceData;
+
+  data.forEach(function(d) {
+    d.index = d3.timeParse("%Y/%j/%H")(`2015/${Math.floor(d.index/24)+1}/${d.index % 24}`);
+    d.usage = +d.usage;
+    d.solar = +d.solar;
+    d.battery = +d.battery;
+    d.month = +d3.timeFormat("%m")(d.index);
+    d.rate = +d.rate;
+    d.netLoad = d.usage - d.solar + d.battery;
+  })
+
+  rangeChart.select(".paths").append("path")
+      .datum(data)
+      .attr("class", "chartpath")
+      .style("fill", "none")
+      .style("stroke", "steelblue");
+
+  mainChart.select(".paths").selectAll("g")
+      .data(['usage', 'solar', 'rate', 'battery'])
+    .enter().append("g")
+    .append("path")
+      .attr("class", d => d)
+      .each(function(p, j) {
+        d3.select(this)
+          .datum(data.map(function(d) {
+            return {index: d.index, value: d[p]}
+          }))
+          .style("fill", "none")
+          .style("stroke", colors[p])
+          .style("stroke-width", 1);                    
+      })
+
+  mainChart.select(".rate")
+    .attr("transform", `translate(0,200)`)
+
+  updateRangeChart()
+})
+
+
+function updateRangeChart() {
+  rangeX.domain(d3.extent(data, d=>d.index));
+  rangeY.domain(d3.extent(data, d=>d.netLoad));
+  xAxisRange.call(d3.axisBottom(rangeX))
+
+  var path = d3.line()
+      .curve(d3.curveMonotoneX)
+      .x(function(d, i) {return rangeX(d.index)})
+      .y(function(d) {return rangeY(d.netLoad)/6})
+
+  rangeChart.select(".chartpath")
+      .attr("d", path)
+
+  brush.move(rangeChart.select(".brush"), null)
+
+  updateMain(rangeX.domain());
+}
+
+function updateMain(range) {
+  mainX.domain(range);
+  scalesY.combined.domain(d3.extent([...d3.extent(data, d=>d.usage), ...d3.extent(data, d=>d.solar), ...d3.extent(data, d=>d.battery)]));
+  scalesY.rate.domain(d3.extent(data, d=>d.rate));
+
+  var dataInRange = data.filter(d => range[0] <= d.index && d.index <= range[1])
+  var netSum = d3.sum(dataInRange, d => d.rate*d.netLoad)
+  total.text(`Total Profit of Selected Range: ${d3.format('$.2f')(netSum)}`)
+
+  var rangedCombined = d3.line()
+      .curve(d3.curveMonotoneX)
+      .x(function(d) {return mainX(d.index)})
+      .y(function(d) {return scalesY.combined(d.value)})
+
+  var rangedRatePath = d3.line()
+      .curve(d3.curveMonotoneX)
+      .x(function(d) {return mainX(d.index)})
+      .y(function(d) {return scalesY.rate(d.value)})
+
+  mainChart.select(".usage")
+      .style("clip-path", "url(#clip)")
+      .attr("d", rangedCombined)
+
+  mainChart.select(".solar")
+      .style("clip-path", "url(#clip)")
+      .attr("d", rangedCombined)
+
+  mainChart.select(".battery")
+      .style("clip-path", "url(#clip)")
+      .attr("d", rangedCombined)
+
+  mainChart.select(".rate")
+      .style("clip-path", "url(#clip)")
+      .attr("d", rangedRatePath)
+
+}
+
+function brushEnded() {
+  var range = !d3.event.selection || d3.event.selection[1] === d3.event.selection[0] ? [0, width] : d3.event.selection;
+  updateMain(range.map(rangeX.invert))
+};
+
+function brushed() {
+  var range = !d3.event.selection || d3.event.selection[1] === d3.event.selection[0] ? [0, width] : d3.event.selection;
+  updateMain(range.map(rangeX.invert))
+}
+
+function mouseMoved() {
+  var MouseX = d3.event.pageX - margin*2;
+
+  posX = mainX.invert(MouseX)
+
+  d3.select("#dateline")
+      .style("visibility", "visible")
+      .attr("x1", mainX(posX))
+      .attr("x2", mainX(posX))
+
+  var thisMoment = data.filter(d=>!(d.index > d3.timeHour(posX)) && !(d.index < d3.timeHour(posX)))[0]
+
+
+  var [mousePosX, mousePosY] = [d3.event.x, d3.event.y];
+  mousePosX += mousePosX > width / 2 ? -200 : 50;
+  mousePosY += mousePosY > height / 2 ? -100 : 50;
+
+  tooltip.style("visibility", "visible")
+      .html(`<table>
+              <tr><td>${d3.timeFormat("%m/%d %I:00 %p")(posX)}</td></tr>
+              <tr id="load-text"><td>Load:</td><td>${d3.format(".2f")(thisMoment.usage)} kWh</td></tr>
+              <tr id="solar-text"><td>Solar:</td><td>${d3.format(".2f")(thisMoment.solar)} kWh</td></tr>
+              <tr id="battery-text"><td>Battery:</td><td>${d3.format(".2f")(thisMoment.battery)} kWh</td></tr>
+              <tr id="net-text"><td>Net Load:</td><td>${d3.format(".2f")(thisMoment.netLoad)} kWh</td></tr>
+              <tr id="rate-text"><td>Rate:</td><td>${d3.format("$.2f")(thisMoment.rate)}</td></tr>
+              <tr id="profit-loss-text"><td>Profit/Loss:</td><td>${d3.format("$.2f")(thisMoment.rate * thisMoment.netLoad)}</td></tr>
+            </table>`)
+      .interrupt()
+      .transition().duration(200).ease(d3.easeLinear)
+      .style("left", mousePosX + "px")
+      .style("top", mousePosY + "px");
+
+  d3.select("#load-text").selectAll("td").style("color", colors.usage)
+  d3.select("#solar-text").selectAll("td").style("color", colors.solar)
+  d3.select("#battery-text").selectAll("td").style("color", colors.battery)
+  d3.select("#net-text").selectAll("td").style("color", "white")
+  d3.select("#rate-text").selectAll("td").style("color", colors.rate)
+
+}
+
+function mouseOut() {
+  d3.select("#dateline")
+    .style("visibility", "hidden")
+
+  tooltip.style("visibility", "hidden")
+}
+</script>
