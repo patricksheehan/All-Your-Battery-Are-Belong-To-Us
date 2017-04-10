@@ -1,24 +1,3 @@
-# Optimize on-site generation for electricity costs as represented by consumption & billing demand rates
-# Input:
-#   - usage.and.rates
-#     - usage (usage in each interval -- hourly) [kWh]
-#     - grid.variable.rate (variable price of grid electricity in each interval) [$/kWh]
-#     - gen.variable.rate (variable price of onsite generated electricity in each interval) [$/kWh]
-#     - from (start of usage interval) [dateTime]
-#   - demand.rates
-#     - rate (price of demand in each interval) [$/kW]
-#     - from (start of when demand rate is applicable) [dateTime]
-#     - to (end of when demand rate is applicable) [dateTime]
-#   - generation.info
-#     - capacity (generator capacity) [kW]
-#     - cost (capital cost of generator) [$/interval] where interval = max(usage.and.rates$to) - min (usage.and.rates$from)
-#   - diagnostic (if true, visualize the optimization and show intermediate results) [T/F]
-#
-# Output:
-#   - optimum.schedule
-#     - gen.kwh (generated electricity in each interval) [kWh]
-#     - grid.kwh (grid electricity used in each interval) [kWh]
-
 library(lpSolveAPI) # linear programming solver utilizing a variant of the simplex method
 IMAGE.WIDTH <- 2560
 IMAGE.HEIGHT <- 1440
@@ -28,7 +7,13 @@ runExample <- function(output.diagnostics=F) {
   # example usage -- set wd to location of files
   setwd('~/all-your-batteries-are-belong-to-us/')
   usage.and.rates <- read.csv('usage_solar_rate_one_month.csv')
-  usage.and.rates$battery <- lpSolve(usage.and.rates, output.diagnostics)
+  battery <- lpSolve(usage.and.rates, output.diagnostics)
+  for (i in 1:(length(battery) - 1)) {
+    if (battery[i+1] != battery[i]) {
+      battery[i] = battery[i+1] - battery[i]
+    }
+  }
+  usage.and.rates$battery <- battery
   write.csv(usage.and.rates, file="optimization_result.csv")
   return (usage.and.rates)
 }
